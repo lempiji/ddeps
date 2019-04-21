@@ -1,0 +1,69 @@
+digraph {
+    {
+        "app"
+        "core.bitop"
+        "core.checkedint"
+        "core.exception"
+        "core.internal.traits"
+        "core.memory"
+        "core.stdc.string"
+        "std.algorithm"
+        "std.algorithm.comparison"
+        "std.algorithm.iteration"
+        "std.algorithm.mutation"
+        "std.algorithm.searching"
+        "std.array"
+        "std.ascii"
+        "std.container.rbtree"
+        "std.conv"
+        "std.encoding"
+        "std.exception"
+        "std.file"
+        "std.format"
+        "std.functional"
+        "std.getopt"
+        "std.internal.memory"
+        "std.internal.unicode_tables"
+        "std.meta"
+        "std.range"
+        "std.range.primitives"
+        "std.stdio"
+        "std.system"
+        "std.traits"
+        "std.typecons"
+        "std.uni"
+        "std.utf"
+    }
+    "app" -> "core.bitop";
+    "app" -> "core.checkedint";
+    "app" -> "core.exception";
+    "app" -> "core.internal.traits";
+    "app" -> "core.memory";
+    "app" -> "core.stdc.string";
+    "app" -> "std.algorithm";
+    "app" -> "std.algorithm.comparison";
+    "app" -> "std.algorithm.iteration";
+    "app" -> "std.algorithm.mutation";
+    "app" -> "std.algorithm.searching";
+    "app" -> "std.array";
+    "app" -> "std.ascii";
+    "app" -> "std.container.rbtree";
+    "app" -> "std.conv";
+    "app" -> "std.encoding";
+    "app" -> "std.exception";
+    "app" -> "std.file";
+    "app" -> "std.format";
+    "app" -> "std.functional";
+    "app" -> "std.getopt";
+    "app" -> "std.internal.memory";
+    "app" -> "std.internal.unicode_tables";
+    "app" -> "std.meta";
+    "app" -> "std.range";
+    "app" -> "std.range.primitives";
+    "app" -> "std.stdio";
+    "app" -> "std.system";
+    "app" -> "std.traits";
+    "app" -> "std.typecons";
+    "app" -> "std.uni";
+    "app" -> "std.utf";
+}

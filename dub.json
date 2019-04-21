@@ -1,0 +1,33 @@
+{
+	"authors": [
+		"lempiji"
+	],
+	"description": "Source review support tool.",
+	"license": "MIT",
+	"name": "ddeps",
+	"configurations": [
+		{
+			"name": "default",
+			"targetType": "executable"
+		},
+		{
+			"name": "diff",
+			"postGenerateCommands": [
+				"dub build -c makedeps",
+				"ddeps --output=deps.dot",
+				"dot -Tsvg -odeps.svg deps.dot",
+				"dot -Tpng -odeps.png deps.dot"
+			]
+		},
+		{
+			"name": "diff-update",
+			"postGenerateCommands": [
+				"ddeps --update"
+			]
+		},
+		{
+			"name": "makedeps",
+			"dflags": ["-deps=deps.txt"]
+		}
+	]
+}

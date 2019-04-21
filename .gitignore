@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/graphviz
+graphviz.so
+graphviz.dylib
+graphviz.dll
+graphviz.a
+graphviz.lib
+graphviz-test-*
+*.exe
+*.o
+*.obj
+*.lst
