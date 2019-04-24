@@ -5,7 +5,7 @@ Source review support tool.
 A tool for creating module dependency graphs. And visualize the differences between the two snapshots.
 
 # Screenshot (Example)
-![rx](https://github.com/lempiji/ddeps/raw/master/rx-deps.png)
+![rx](https://raw.githubusercontent.com/lempiji/ddeps/master/screenshot/rx-deps.png)
 
 # Requirements
 1. dub
