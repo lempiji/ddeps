@@ -115,4 +115,5 @@ dub build -c diff-update
 | lock | `-l XXX` or `--lock=XXX` | lock file name | `deps-lock.txt` |
 | focus | `-f XXX` or `--focus=XXX` | filtering target by name | `app` |
 | depth | `-d N` or `--depth=N` | search depth | 1 |
+| exclude | `-e XXX [-e YYY]` or `--exclude=XXX [--exclude=YYY]` | exclude module names | `object` |
 | help | `--help` | show help |  |
