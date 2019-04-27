@@ -23,7 +23,7 @@ A tool for creating module dependency graphs. And visualize the differences betw
 			"name": "diff",
 			"postGenerateCommands": [
 				"dub build -c makedeps",
-				"ddeps --focus=rx --out=deps.dot",
+				"ddeps --focus=rx -o deps.dot",
 				"dot -Tsvg -odeps.svg deps.dot"
 			]
 		},
@@ -37,7 +37,7 @@ A tool for creating module dependency graphs. And visualize the differences betw
 			"name": "makedeps",
 			"dflags": ["-deps=deps.txt"]
 		}
-    ]
+  ]
 ```
 
 ## For executable
@@ -50,7 +50,7 @@ A tool for creating module dependency graphs. And visualize the differences betw
 			"name": "diff",
 			"postGenerateCommands": [
 				"dub build -c makedeps",
-				"ddeps --out=deps.dot",
+				"ddeps -o deps.dot",
 				"dot -Tsvg -odeps.svg deps.dot"
 			]
 		},
@@ -64,7 +64,7 @@ A tool for creating module dependency graphs. And visualize the differences betw
 			"name": "makedeps",
 			"dflags": ["-deps=deps.txt"]
 		}
-    ]
+  ]
 ```
 
 # Usage
@@ -105,10 +105,10 @@ dub build -c diff-update
 
 | name | Usage | description | default |
 |:-----|:------------|:--|:--|
-| input | `-i` or `--input` | deps file name | `deps.txt` |
+| input | `-i XXX` or `--input=XXX` | deps file name | `deps.txt` |
 | output | `-o XXX` or `--output=XXX` | destination file name | write to stdout |
 | update | `-u` or `--update` | update lock file | false |
-| lock | `-l` or `--lock` | lock file name | `deps-lock.txt` |
-| focus | `--focus=XXX` | filtering target by name | `app` |
-| depth | `-d` or `--depth` | update lock file | false |
+| lock | `-l XXX` or `--lock=XXX` | lock file name | `deps-lock.txt` |
+| focus | `-f XXX` or `--focus=XXX` | filtering target by name | `app` |
+| depth | `-d N` or `--depth=N` | search depth | 1 |
 | help | `--help` | show help |  |
