@@ -32,7 +32,7 @@ A tool for creating module dependency graphs. And visualize the differences betw
 			"name": "diff-update",
 			"postGenerateCommands": [
 				"dub fetch ddeps",
-				"dub run ddeps -- --focus=rx --update"
+				"dub run ddeps -- --update"
 			]
 		},
 		{
