@@ -5,6 +5,7 @@ import std.container.rbtree;
 import std.array;
 import std.file;
 import std.getopt;
+import std.range;
 
 version (unittest)
 {
@@ -19,6 +20,7 @@ else
 		string focusName = "app";
 		int filterCost = 1;
 		bool forceUpdate;
+		string[] excludeNames = ["object"]; // default exclude
 
 		// dfmt off
 		auto helpInformation = getopt(args,
@@ -27,7 +29,8 @@ else
 				"u|update", "update lock file", &forceUpdate,
 				"l|lock", "lock file name", &lockfile,
 				"f|focus", "filtering target name", &focusName,
-				"d|depth", "depth for dependency search", &filterCost
+				"d|depth", "depth for dependency search", &filterCost,
+				"e|exclude", "exclude module names", &excludeNames
 			);
 		// dfmt on
 
@@ -47,7 +50,8 @@ else
 		auto beforeGraph = readText(lockfile).toGraph();
 		auto afterGraph = readText(depsfile).toGraph();
 
-		auto diff = makeDiff(beforeGraph, afterGraph, DiffSettings(focusName, filterCost));
+		auto diff = makeDiff(beforeGraph, afterGraph, DiffSettings(focusName,
+				filterCost, excludeNames));
 
 		auto f = outfile ? File(outfile, "w") : stdout;
 		scope (exit)
@@ -204,8 +208,21 @@ struct GraphDiff
 
 struct DiffSettings
 {
+	this(string filterName, int filterCost)
+	{
+		this(filterName, filterCost, null);
+	}
+
+	this(string filterName, int filterCost, string[] excludeNames)
+	{
+		this.filterName = filterName;
+		this.filterCost = filterCost;
+		this.excludeNames = excludeNames;
+	}
+
 	string filterName;
 	int filterCost;
+	string[] excludeNames;
 }
 
 GraphDiff makeDiff(DependenciesGraph before, DependenciesGraph after, DiffSettings settings)
@@ -218,9 +235,9 @@ GraphDiff makeDiff(DependenciesGraph before, DependenciesGraph after, DiffSettin
 			settings.filterName, settings.filterCost);
 
 	auto beforeEdges = before.dependencies.filter!(e => isOutputTarget(e,
-			beforeTempCost, settings.filterCost)).array();
+			beforeTempCost, settings.filterCost, settings.excludeNames)).array();
 	auto afterEdges = after.dependencies.filter!(e => isOutputTarget(e,
-			afterTempCost, settings.filterCost)).array();
+			afterTempCost, settings.filterCost, settings.excludeNames)).array();
 
 	result.keptEdges = setIntersection(beforeEdges, afterEdges).array();
 	result.removedEdges = setDifference(beforeEdges, afterEdges).array();
@@ -243,6 +260,7 @@ GraphDiff makeDiff(DependenciesGraph before, DependenciesGraph after, DiffSettin
 
 unittest
 {
+	// Add node and edge
 	auto before = toGraph(`
 app (/app.d) : private : object (/object.d)
 app (/app.d) : private : std.stdio (/std/stdio.d)
@@ -262,18 +280,31 @@ app (/app.d) : private : std.algorithm (/std/algorithm.d)
 	assert(diff.removedNodes.length == 0);
 	assert(diff.addedNodes.length == 1);
 	assert(diff.addedNodes[0].name == "std.algorithm");
+
+	assert(diff.keptEdges.length == 2);
+	assert(diff.keptEdges[0].module_.name == "app");
+	assert(diff.keptEdges[0].import_.name == "object");
+	assert(diff.keptEdges[1].module_.name == "app");
+	assert(diff.keptEdges[1].import_.name == "std.stdio");
+	assert(diff.removedEdges.length == 0);
+	assert(diff.addedEdges.length == 1);
+	assert(diff.addedEdges[0].module_.name == "app");
+	assert(diff.addedEdges[0].import_.name == "std.algorithm");
 }
 
 unittest
 {
+	// Remove node and edge
 	auto before = toGraph(`
 app (/app.d) : private : object (/object.d)
 app (/app.d) : private : std.stdio (/std/stdio.d)
 app (/app.d) : private : std.algorithm (/std/algorithm.d)
+std.stdio (/std/stdio.d) : private : object (/object.d)
 `);
 	auto after = toGraph(`
 app (/app.d) : private : object (/object.d)
 app (/app.d) : private : std.stdio (/std/stdio.d)
+std.stdio (/std/stdio.d) : private : object (/object.d)
 `);
 
 	auto diff = makeDiff(before, after, DiffSettings("app", 1));
@@ -285,56 +316,86 @@ app (/app.d) : private : std.stdio (/std/stdio.d)
 	assert(diff.removedNodes.length == 1);
 	assert(diff.removedNodes[0].name == "std.algorithm");
 	assert(diff.addedNodes.length == 0);
-}
-
-unittest
-{
-	auto before = toGraph(`
-app (/app.d) : private : object (/object.d)
-app (/app.d) : private : std.stdio (/std/stdio.d)
-`);
-	auto after = toGraph(`
-app (/app.d) : private : object (/object.d)
-app (/app.d) : private : std.stdio (/std/stdio.d)
-std.stdio (/std/stdio.d) : private : object (/object.d)
-`);
-
-	auto diff = makeDiff(before, after, DiffSettings("app", 2));
 
 	assert(diff.keptEdges.length == 2);
 	assert(diff.keptEdges[0].module_.name == "app");
 	assert(diff.keptEdges[0].import_.name == "object");
 	assert(diff.keptEdges[1].module_.name == "app");
 	assert(diff.keptEdges[1].import_.name == "std.stdio");
-	assert(diff.removedEdges.length == 0);
-	assert(diff.addedEdges.length == 1);
-	assert(diff.addedEdges[0].module_.name == "std.stdio");
-	assert(diff.addedEdges[0].import_.name == "object");
-}
-
-unittest
-{
-	auto before = toGraph(`
-app (/app.d) : private : object (/object.d)
-app (/app.d) : private : std.stdio (/std/stdio.d)
-std.stdio (/std/stdio.d) : private : object (/object.d)
-`);
-	auto after = toGraph(`
-app (/app.d) : private : object (/object.d)
-app (/app.d) : private : std.stdio (/std/stdio.d)
-`);
-
-	auto diff = makeDiff(before, after, DiffSettings("app", 2));
-
-	assert(diff.keptEdges.length == 2);
-	assert(diff.keptEdges[0].module_.name == "app");
-	assert(diff.keptEdges[0].import_.name == "object");
-	assert(diff.keptEdges[1].module_.name == "app");
-	assert(diff.keptEdges[1].import_.name == "std.stdio");
-	assert(diff.addedEdges.length == 0);
 	assert(diff.removedEdges.length == 1);
-	assert(diff.removedEdges[0].module_.name == "std.stdio");
-	assert(diff.removedEdges[0].import_.name == "object");
+	assert(diff.removedEdges[0].module_.name == "app");
+	assert(diff.removedEdges[0].import_.name == "std.algorithm");
+	assert(diff.addedEdges.length == 0);
+}
+
+unittest
+{
+	// Add node and edge with excludeNames,
+	// then omit about the std.conv
+	auto before = toGraph(`
+app (/app.d) : private : object (/object.d)
+app (/app.d) : private : std.stdio (/std/stdio.d)
+std.stdio (/std/stdio.d) : private : object (/object.d)
+`);
+	auto after = toGraph(`
+app (/app.d) : private : object (/object.d)
+app (/app.d) : private : std.conv (/std/conv.d)
+app (/app.d) : private : std.stdio (/std/stdio.d)
+std.stdio (/std/stdio.d) : private : object (/object.d)
+`);
+
+	auto diff = makeDiff(before, after, DiffSettings("app", 2, ["std.conv"]));
+
+	assert(diff.keptNodes.length == 3);
+	assert(diff.keptNodes[0].name == "app");
+	assert(diff.keptNodes[1].name == "object");
+	assert(diff.keptNodes[2].name == "std.stdio");
+	assert(diff.removedNodes.length == 0);
+	assert(diff.addedNodes.length == 0);
+
+	assert(diff.keptEdges.length == 3);
+	assert(diff.keptEdges[0].module_.name == "app");
+	assert(diff.keptEdges[0].import_.name == "object");
+	assert(diff.keptEdges[1].module_.name == "app");
+	assert(diff.keptEdges[1].import_.name == "std.stdio");
+	assert(diff.keptEdges[2].module_.name == "std.stdio");
+	assert(diff.keptEdges[2].import_.name == "object");
+	assert(diff.removedEdges.length == 0);
+	assert(diff.addedEdges.length == 0);
+}
+
+unittest
+{
+	// Remove node and edge with excludeNames,
+	// then omit about the std.conv
+	auto before = toGraph(`
+app (/app.d) : private : object (/object.d)
+app (/app.d) : private : std.conv (/std/conv.d)
+app (/app.d) : private : std.stdio (/std/stdio.d)
+std.stdio (/std/stdio.d) : private : object (/object.d)
+`);
+	auto after = toGraph(`
+app (/app.d) : private : object (/object.d)
+app (/app.d) : private : std.stdio (/std/stdio.d)
+std.stdio (/std/stdio.d) : private : object (/object.d)
+`);
+
+	auto diff = makeDiff(before, after, DiffSettings("app", 2, ["std.conv"]));
+
+	assert(diff.keptNodes.length == 3);
+	assert(diff.keptNodes[0].name == "app");
+	assert(diff.keptNodes[1].name == "object");
+	assert(diff.keptNodes[2].name == "std.stdio");
+
+	assert(diff.keptEdges.length == 3);
+	assert(diff.keptEdges[0].module_.name == "app");
+	assert(diff.keptEdges[0].import_.name == "object");
+	assert(diff.keptEdges[1].module_.name == "app");
+	assert(diff.keptEdges[1].import_.name == "std.stdio");
+	assert(diff.keptEdges[2].module_.name == "std.stdio");
+	assert(diff.keptEdges[2].import_.name == "object");
+	assert(diff.addedEdges.length == 0);
+	assert(diff.removedEdges.length == 0);
 }
 
 struct Node
@@ -485,20 +546,65 @@ int getCost(Node node, int[string] cost)
 	return cost[node.name];
 }
 
-bool isOutputTarget(Node node, int[string] cost, int filter)
+bool isOutputTarget(Node node, int[string] cost, int filter, string[] excludeNames = null)
 {
-	// 暗黙的にimportされるが、グラフが大変見づらいため削除
-	if (node.name == "object")
-		return false;
+	foreach (excludeName; excludeNames)
+	{
+		if (node.name == excludeName || node.name.startsWith(chain(excludeName, ".")))
+			return false;
+	}
 
 	return node.getCost(cost) <= filter;
 }
 
-bool isOutputTarget(Edge edge, int[string] cost, int filter)
+unittest
 {
-	if (edge.import_.name == "object" || edge.import_.getCost(cost) > filter)
+	int[string] cost = ["app" : 0, "std.stdio" : 1, "core.atomic" : 2, "object" : 3];
+	assert(isOutputTarget(Node("app"), cost, 1));
+	assert(isOutputTarget(Node("std.stdio"), cost, 1));
+	assert(!isOutputTarget(Node("core.atomic"), cost, 1));
+	assert(!isOutputTarget(Node("object"), cost, 1));
+
+	assert(isOutputTarget(Node("app"), cost, 2));
+	assert(isOutputTarget(Node("std.stdio"), cost, 2));
+	assert(isOutputTarget(Node("core.atomic"), cost, 2));
+	assert(!isOutputTarget(Node("object"), cost, 2));
+
+	assert(isOutputTarget(Node("app"), cost, 1, ["std.stdio"]));
+	assert(!isOutputTarget(Node("std.stdio"), cost, 1, ["std.stdio"]));
+}
+
+bool isOutputTarget(Edge edge, int[string] cost, int filter, string[] excludeNames = null)
+{
+	foreach (excludeName; excludeNames)
+	{
+		if (edge.module_.name == excludeName
+				|| edge.module_.name.startsWith(chain(excludeName, ".")))
+			return false;
+		if (edge.import_.name == excludeName
+				|| edge.import_.name.startsWith(chain(excludeName, ".")))
+			return false;
+	}
+
+	if (edge.import_.getCost(cost) > filter)
 		return false;
-	if (edge.module_.name == "object" || edge.module_.getCost(cost) >= filter)
+	if (edge.module_.getCost(cost) >= filter)
 		return false;
+
 	return true;
+}
+
+unittest
+{
+	int[string] cost = ["app" : 0, "std.stdio" : 1, "core.atomic" : 2, "object" : 3];
+	assert(isOutputTarget(Edge("module", Node("app"), Node("std.stdio")), cost, 1));
+	assert(!isOutputTarget(Edge("module", Node("std.stdio"), Node("core.atomic")), cost, 1));
+	assert(isOutputTarget(Edge("module", Node("std.stdio"), Node("core.atomic")), cost, 2));
+
+	assert(isOutputTarget(Edge("module", Node("app"), Node("std.stdio")), cost, 1, ["std.conv"]));
+	assert(!isOutputTarget(Edge("module", Node("app"), Node("std.stdio")), cost, 1, ["std.stdio"]));
+	assert(!isOutputTarget(Edge("module", Node("std.stdio"),
+			Node("core.atomic")), cost, 1, ["std.stdio"]));
+	assert(!isOutputTarget(Edge("module", Node("std.stdio"),
+			Node("core.atomic")), cost, 2, ["std.stdio"]));
 }
