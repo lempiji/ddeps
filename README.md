@@ -1,17 +1,22 @@
 # DDeps
 
-Source review support tool.
+Source review support tool
 
-A tool for creating module dependency graphs. And visualize the differences between the two snapshots.
+A tool to create a module dependency graph for the D language.
+The feature is that you can record snapshots in two versions and compare them to visualize the differences.
 
 # Screenshot (Example)
-##### basic
+
+**basic**
+
 ![rx](https://raw.githubusercontent.com/lempiji/ddeps/master/screenshot/rx-deps.png)
 
-##### no core, no std
+**no core, no std**
+
 ![rx-nostd](https://raw.githubusercontent.com/lempiji/ddeps/master/screenshot/rx-deps-nostd.png)
 
-##### exclude rx.subject
+**exclude rx.subject**
+
 ![rx-nosubject](https://raw.githubusercontent.com/lempiji/ddeps/master/screenshot/rx-deps-nosubject.png)
 
 # Requirements
