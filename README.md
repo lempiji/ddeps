@@ -23,14 +23,16 @@ A tool for creating module dependency graphs. And visualize the differences betw
 			"name": "diff",
 			"postGenerateCommands": [
 				"dub build -c makedeps",
-				"ddeps --focus=rx -o deps.dot",
+				"dub fetch ddeps",
+				"dub run ddeps -- --focus=rx -o deps.dot",
 				"dot -Tsvg -odeps.svg deps.dot"
 			]
 		},
 		{
 			"name": "diff-update",
 			"postGenerateCommands": [
-				"ddeps --focus=rx --update"
+				"dub fetch ddeps",
+				"dub run ddeps -- --focus=rx --update"
 			]
 		},
 		{
@@ -50,14 +52,16 @@ A tool for creating module dependency graphs. And visualize the differences betw
 			"name": "diff",
 			"postGenerateCommands": [
 				"dub build -c makedeps",
-				"ddeps -o deps.dot",
+				"dub fetch ddeps",
+				"dub run ddeps -- -o deps.dot",
 				"dot -Tsvg -odeps.svg deps.dot"
 			]
 		},
 		{
 			"name": "diff-update",
 			"postGenerateCommands": [
-				"ddeps --update"
+				"dub fetch ddeps",
+				"dub run ddeps -- --update"
 			]
 		},
 		{
