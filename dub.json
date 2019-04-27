@@ -14,7 +14,8 @@
 			"name": "diff",
 			"postGenerateCommands": [
 				"dub build -c makedeps",
-				"ddeps --output=deps.dot",
+				"dub fetch ddeps",
+				"dub run ddeps -- --output=deps.dot",
 				"dot -Tsvg -odeps.svg deps.dot",
 				"dot -Tpng -odeps.png deps.dot"
 			]
@@ -22,7 +23,8 @@
 		{
 			"name": "diff-update",
 			"postGenerateCommands": [
-				"ddeps --update"
+				"dub fetch ddeps",
+				"dub run ddeps -- --update"
 			]
 		},
 		{
