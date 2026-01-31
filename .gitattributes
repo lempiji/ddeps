@@ -1,0 +1,15 @@
+# Enforce LF line endings for all text files
+* text=auto eol=lf
+
+# Explicitly set line endings for specific file types
+*.d text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.txt text eol=lf
+*.dot text eol=lf
+*.svg text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
