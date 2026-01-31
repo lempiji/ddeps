@@ -7,38 +7,9 @@ digraph {
         "std.container.rbtree"
         "std.conv"
         "std.file"
-        "std.format"
         "std.getopt"
         "std.range"
         "std.stdio"
-    }
-    {
-        node [style=filled color="#fdaeb7" fillcolor="#ffeef0"];
-        "core.bitop"
-        "core.checkedint"
-        "core.exception"
-        "core.internal.string"
-        "core.internal.traits"
-        "core.memory"
-        "core.stdc.string"
-        "std.algorithm.comparison"
-        "std.algorithm.iteration"
-        "std.algorithm.mutation"
-        "std.algorithm.searching"
-        "std.algorithm.sorting"
-        "std.encoding"
-        "std.exception"
-        "std.functional"
-        "std.internal.memory"
-        "std.internal.unicode_tables"
-        "std.meta"
-        "std.parallelism"
-        "std.range.primitives"
-        "std.system"
-        "std.traits"
-        "std.typecons"
-        "std.uni"
-        "std.utf"
     }
     "app" -> "std.algorithm";
     "app" -> "std.array";
@@ -46,33 +17,7 @@ digraph {
     "app" -> "std.container.rbtree";
     "app" -> "std.conv";
     "app" -> "std.file";
-    "app" -> "std.format";
     "app" -> "std.getopt";
     "app" -> "std.range";
     "app" -> "std.stdio";
-    "app" -> "core.bitop" [color="#cb2431"];
-    "app" -> "core.checkedint" [color="#cb2431"];
-    "app" -> "core.exception" [color="#cb2431"];
-    "app" -> "core.internal.string" [color="#cb2431"];
-    "app" -> "core.internal.traits" [color="#cb2431"];
-    "app" -> "core.memory" [color="#cb2431"];
-    "app" -> "core.stdc.string" [color="#cb2431"];
-    "app" -> "std.algorithm.comparison" [color="#cb2431"];
-    "app" -> "std.algorithm.iteration" [color="#cb2431"];
-    "app" -> "std.algorithm.mutation" [color="#cb2431"];
-    "app" -> "std.algorithm.searching" [color="#cb2431"];
-    "app" -> "std.algorithm.sorting" [color="#cb2431"];
-    "app" -> "std.encoding" [color="#cb2431"];
-    "app" -> "std.exception" [color="#cb2431"];
-    "app" -> "std.functional" [color="#cb2431"];
-    "app" -> "std.internal.memory" [color="#cb2431"];
-    "app" -> "std.internal.unicode_tables" [color="#cb2431"];
-    "app" -> "std.meta" [color="#cb2431"];
-    "app" -> "std.parallelism" [color="#cb2431"];
-    "app" -> "std.range.primitives" [color="#cb2431"];
-    "app" -> "std.system" [color="#cb2431"];
-    "app" -> "std.traits" [color="#cb2431"];
-    "app" -> "std.typecons" [color="#cb2431"];
-    "app" -> "std.uni" [color="#cb2431"];
-    "app" -> "std.utf" [color="#cb2431"];
 }

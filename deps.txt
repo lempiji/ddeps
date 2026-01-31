@@ -580,7 +580,6 @@ app (source\\app.d) : private : std.getopt (C:\\D\\dmd2\\windows\\bin64\\..\\..\
 app (source\\app.d) : private : std.range (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\phobos\\std\\range\\package.d)
 app (source\\app.d) : private : std.ascii (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\phobos\\std\\ascii.d):isAlphaNum,isDigit
 app (source\\app.d) : private : std.array (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\phobos\\std\\array.d):appender
-app (source\\app.d) : private : std.format (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\phobos\\std\\format\\package.d):formattedWrite
 std.stdio (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\phobos\\std\\stdio.d) : private : std.exception (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\phobos\\std\\exception.d):enforce,errnoEnforce
 object (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\druntime\\import\\object.d) : private : std.traits (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\phobos\\std\\traits.d) -> imported
 std.traits (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\phobos\\std\\traits.d) : private : core.internal.traits (C:\\D\\dmd2\\windows\\bin64\\..\\..\\src\\druntime\\import\\core\\internal\\traits.d):_hasIndirections=hasIndirections
