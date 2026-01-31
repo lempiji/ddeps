@@ -10,7 +10,6 @@ import std.getopt;
 import std.range;
 import std.ascii : isAlphaNum, isDigit;
 import std.array : appender;
-import std.format : formattedWrite;
 
 version (unittest)
 {
