@@ -21,7 +21,8 @@ The feature is that you can record snapshots in two versions and compare them to
 
 # Requirements
 1. dub
-2. Graphviz (for visualize)
+2. Graphviz (for DOT/SVG output)
+3. Mermaid-capable viewer/editor (only when using `--format=mermaid`)
 
 # Settings
 
@@ -83,6 +84,20 @@ The feature is that you can record snapshots in two versions and compare them to
   ]
 ```
 
+### For Mermaid output (example)
+Use the same configurations but swap the post command to emit Mermaid instead of DOT/SVG:
+
+```json
+{
+	"name": "diff-mermaid",
+	"postGenerateCommands": [
+		"dub build -c makedeps",
+		"dub fetch ddeps",
+		"dub run ddeps -- --format=mermaid --output=deps.mmd"
+	]
+}
+```
+
 # Usage
 
 ## At first
@@ -98,7 +113,7 @@ dub build -c diff-update
 2. Update diff
 	- `dub build -c diff`
 3. Do review with the dependency graph diff
-	- Open the `deps.svg` in browser
+	- Open the `deps.svg` in browser, or generate Mermaid with `dub run ddeps -- --format=mermaid --output=deps.mmd` and view it in a Mermaid-enabled editor.
 
 ## Compare 2 versions
 
@@ -114,7 +129,7 @@ dub build -c diff-update
 	- `git reset --hard ORIG_HEAD`
 5. make diff
 	- `dub build -c diff`
-6. open `deps.svg`
+6. open `deps.svg` (or produce Mermaid: `dub run ddeps -- --format=mermaid --output=deps.mmd`)
 
 
 # Arguments
@@ -128,4 +143,15 @@ dub build -c diff-update
 | focus | `-f XXX` or `--focus=XXX` | filtering target by name | `app` |
 | depth | `-d N` or `--depth=N` | search depth | 1 |
 | exclude | `-e XXX [-e YYY]` or `--exclude=XXX [--exclude=YYY]` | exclude module names | `object` |
+| format | `--format=dot|mermaid` | output format | `dot` |
 | help | `--help` | show help |  |
+
+# Mermaid output
+
+You can render the diff as a Mermaid graph (useful in Markdown viewers that support Mermaid):
+
+```bash
+dub run ddeps -- --format=mermaid --output=deps.mmd
+```
+
+Open `deps.mmd` in a Mermaid-capable viewer/editor to inspect the graph. Added nodes/edges are green, removed are red, kept are neutral. Graphviz is not required for Mermaid output.

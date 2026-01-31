@@ -1,3 +1,5 @@
+module app;
+
 import std.stdio;
 import std.algorithm;
 import std.conv;
@@ -6,6 +8,8 @@ import std.array;
 import std.file;
 import std.getopt;
 import std.range;
+import std.ascii : isAlphaNum, isDigit;
+import std.array : appender;
 
 version (unittest)
 {
@@ -21,6 +25,7 @@ else
 		int filterCost = 1;
 		bool forceUpdate;
 		string[] excludeNames = ["object"]; // default exclude
+		string formatName = "dot";
 
 		// dfmt off
 		auto helpInformation = getopt(args,
@@ -30,7 +35,8 @@ else
 				"l|lock", "lock file name", &lockfile,
 				"f|focus", "filtering target name", &focusName,
 				"d|depth", "depth for dependency search", &filterCost,
-				"e|exclude", "exclude module names", &excludeNames
+				"e|exclude", "exclude module names", &excludeNames,
+				"format", "output format: dot or mermaid", &formatName
 			);
 		// dfmt on
 
@@ -53,91 +59,23 @@ else
 		auto diff = makeDiff(beforeGraph, afterGraph, DiffSettings(focusName,
 				filterCost, excludeNames));
 
+		auto moduleSet = buildModuleSet(diff);
 		auto f = outfile ? File(outfile, "w") : stdout;
 		scope (exit)
 			f.close();
 
-		f.writeln("digraph {");
-		if (diff.keptNodes.length > 0)
+		switch (formatName)
 		{
-			f.writeln("    {");
-			foreach (m; diff.keptNodes)
-			{
-				f.writefln!"        \"%s\""(m.name);
-			}
-			f.writeln("    }");
+		case "dot":
+			renderDot(f, diff, moduleSet);
+			break;
+		case "mermaid":
+			renderMermaid(f, diff, moduleSet);
+			break;
+		default:
+			stderr.writefln!"Unknown format: %s (use dot or mermaid)"(formatName);
+			return 2;
 		}
-		if (diff.removedNodes.length > 0)
-		{
-			f.writeln("    {");
-			f.writeln(`        node [style=filled color="#fdaeb7" fillcolor="#ffeef0"];`);
-			foreach (m; diff.removedNodes)
-			{
-				f.writefln!"        \"%s\""(m.name);
-			}
-			f.writeln("    }");
-		}
-		if (diff.addedNodes.length > 0)
-		{
-			f.writeln("    {");
-			f.writeln(`        node [style=filled color="#bef5cb" fillcolor="#e6ffed"];`);
-			foreach (m; diff.addedNodes)
-			{
-				f.writefln!"        \"%s\""(m.name);
-			}
-			f.writeln("    }");
-		}
-
-		////////////////////////////////////////////////////////////////////////////
-		enum ModuleEditType
-		{
-			Keep,
-			Remove,
-			Add,
-		}
-
-		ModuleEditType[string] moduleSet;
-		foreach (m; diff.keptNodes)
-			moduleSet[m.name] = ModuleEditType.Keep;
-		foreach (m; diff.removedNodes)
-			moduleSet[m.name] = ModuleEditType.Remove;
-		foreach (m; diff.addedNodes)
-			moduleSet[m.name] = ModuleEditType.Add;
-
-		if (diff.keptEdges.length > 0)
-		{
-			foreach (m; diff.keptEdges)
-			{
-				switch (moduleSet[m.import_.name]) with (ModuleEditType)
-				{
-				case Keep:
-					f.writefln!`    "%s" -> "%s";`(m.module_.name, m.import_.name);
-					break;
-				case Remove:
-					f.writefln!`    "%s" -> "%s" [color="#cb2431"];`(m.module_.name,
-							m.import_.name);
-					break;
-				case Add:
-					f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name,
-							m.import_.name);
-					break;
-				default:
-					writeln("// unknown edge: ", m);
-					break;
-				}
-			}
-		}
-		if (diff.removedEdges.length > 0)
-		{
-			foreach (m; diff.removedEdges)
-				f.writefln!`    "%s" -> "%s" [color="#cb2431"];`(m.module_.name, m.import_.name);
-		}
-		if (diff.addedEdges.length > 0)
-		{
-			foreach (m; diff.addedEdges)
-				f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name, m.import_.name);
-		}
-		f.writeln("}");
 
 		return 0;
 	}
@@ -206,6 +144,13 @@ struct GraphDiff
 	Edge[] addedEdges;
 }
 
+enum ModuleEditType
+{
+	Keep,
+	Remove,
+	Add,
+}
+
 struct DiffSettings
 {
 	this(string filterName, int filterCost)
@@ -256,6 +201,18 @@ GraphDiff makeDiff(DependenciesGraph before, DependenciesGraph after, DiffSettin
 	result.addedNodes = setDifference(afterNodes, beforeNodes).array();
 
 	return result;
+}
+
+ModuleEditType[string] buildModuleSet(GraphDiff diff)
+{
+	ModuleEditType[string] moduleSet;
+	foreach (m; diff.keptNodes)
+		moduleSet[m.name] = ModuleEditType.Keep;
+	foreach (m; diff.removedNodes)
+		moduleSet[m.name] = ModuleEditType.Remove;
+	foreach (m; diff.addedNodes)
+		moduleSet[m.name] = ModuleEditType.Add;
+	return moduleSet;
 }
 
 unittest
@@ -607,4 +564,215 @@ unittest
 			Node("core.atomic")), cost, 1, ["std.stdio"]));
 	assert(!isOutputTarget(Edge("module", Node("std.stdio"),
 			Node("core.atomic")), cost, 2, ["std.stdio"]));
+}
+
+string sanitizeId(string name)
+{
+	auto w = appender!string();
+	foreach (i, ch; name)
+	{
+		if (isAlphaNum(ch) || ch == '_')
+		{
+			w.put(ch);
+			continue;
+		}
+		w.put('_');
+	}
+
+	auto result = w.data;
+	if (result.length == 0)
+		return "_";
+	if (isDigit(result[0]))
+		result = "_" ~ result;
+	return result;
+}
+
+unittest
+{
+	assert(sanitizeId("std.stdio") == "std_stdio");
+	assert(sanitizeId("rx/subject") == "rx_subject");
+	assert(sanitizeId("1st.core") == "_1st_core");
+	assert(sanitizeId("alpha") == "alpha");
+}
+
+void renderDot(File f, GraphDiff diff, ModuleEditType[string] moduleSet)
+{
+	f.writeln("digraph {");
+	if (diff.keptNodes.length > 0)
+	{
+		f.writeln("    {");
+		foreach (m; diff.keptNodes)
+		{
+			f.writefln!"        \"%s\"" (m.name);
+		}
+		f.writeln("    }");
+	}
+	if (diff.removedNodes.length > 0)
+	{
+		f.writeln("    {");
+		f.writeln(`        node [style=filled color="#fdaeb7" fillcolor="#ffeef0"];`);
+		foreach (m; diff.removedNodes)
+		{
+			f.writefln!"        \"%s\"" (m.name);
+		}
+		f.writeln("    }");
+	}
+	if (diff.addedNodes.length > 0)
+	{
+		f.writeln("    {");
+		f.writeln(`        node [style=filled color="#bef5cb" fillcolor="#e6ffed"];`);
+		foreach (m; diff.addedNodes)
+		{
+			f.writefln!"        \"%s\"" (m.name);
+		}
+		f.writeln("    }");
+	}
+
+	if (diff.keptEdges.length > 0)
+	{
+		foreach (m; diff.keptEdges)
+		{
+			switch (moduleSet[m.import_.name]) with (ModuleEditType)
+			{
+			case Keep:
+				f.writefln!`    "%s" -> "%s";`(m.module_.name, m.import_.name);
+				break;
+			case Remove:
+				f.writefln!`    "%s" -> "%s" [color="#cb2431"];`(m.module_.name,
+						m.import_.name);
+				break;
+			case Add:
+				f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name,
+						m.import_.name);
+				break;
+			default:
+				writeln("// unknown edge: ", m);
+				break;
+			}
+		}
+	}
+	if (diff.removedEdges.length > 0)
+	{
+		foreach (m; diff.removedEdges)
+			f.writefln!`    "%s" -> "%s" [color="#cb2431"];`(m.module_.name, m.import_.name);
+	}
+	if (diff.addedEdges.length > 0)
+	{
+		foreach (m; diff.addedEdges)
+			f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name, m.import_.name);
+	}
+	f.writeln("}");
+}
+
+struct MermaidNode
+{
+	string id;
+	string label;
+	ModuleEditType kind;
+}
+
+void renderMermaid(File f, GraphDiff diff, ModuleEditType[string] moduleSet)
+{
+	f.writeln("graph TD");
+	f.writeln("  classDef kept stroke:#24292e,stroke-width:1px,fill:#ffffff;");
+	f.writeln("  classDef added stroke:#2cbe4e,stroke-width:2px,fill:#e6ffed;");
+	f.writeln("  classDef removed stroke:#cb2431,stroke-width:2px,fill:#ffeef0;");
+
+	MermaidNode[] nodes;
+	void pushNodes(Node[] src, ModuleEditType kind)
+	{
+		foreach (n; src)
+		{
+			nodes ~= MermaidNode(sanitizeId(n.name), n.name, kind);
+		}
+	}
+	pushNodes(diff.keptNodes, ModuleEditType.Keep);
+	pushNodes(diff.addedNodes, ModuleEditType.Add);
+	pushNodes(diff.removedNodes, ModuleEditType.Remove);
+
+	bool[string] seen;
+	foreach (n; nodes)
+	{
+		if (n.id in seen)
+			continue;
+		seen[n.id] = true;
+		f.writefln!"  %s[\"%s\"]"(n.id, n.label);
+		final switch (n.kind)
+		{
+		case ModuleEditType.Keep:
+			f.writefln!"  class %s kept;"(n.id);
+			break;
+		case ModuleEditType.Add:
+			f.writefln!"  class %s added;"(n.id);
+			break;
+		case ModuleEditType.Remove:
+			f.writefln!"  class %s removed;"(n.id);
+			break;
+		}
+	}
+
+	size_t edgeIndex = 0;
+	void writeEdge(Edge e, string color = null)
+	{
+		auto fromId = sanitizeId(e.module_.name);
+		auto toId = sanitizeId(e.import_.name);
+		f.writefln!"  %s --> %s"(fromId, toId);
+		if (color.length)
+		{
+			f.writefln!"  linkStyle %s stroke:%s,stroke-width:2px;"(edgeIndex, color);
+		}
+		edgeIndex++;
+	}
+
+	foreach (m; diff.keptEdges)
+	{
+		final switch (moduleSet[m.import_.name]) with (ModuleEditType)
+		{
+		case Keep:
+			writeEdge(m);
+			break;
+		case Remove:
+			writeEdge(m, "#cb2431");
+			break;
+		case Add:
+			writeEdge(m, "#2cbe4e");
+			break;
+		}
+	}
+	foreach (m; diff.removedEdges)
+		writeEdge(m, "#cb2431");
+	foreach (m; diff.addedEdges)
+		writeEdge(m, "#2cbe4e");
+}
+
+unittest
+{
+	auto before = toGraph(`
+app (/app.d) : private : object (/object.d)
+app (/app.d) : private : std.stdio (/std/stdio.d)
+`);
+	auto after = toGraph(`
+app (/app.d) : private : object (/object.d)
+app (/app.d) : private : std.stdio (/std/stdio.d)
+app (/app.d) : private : std.conv (/std/conv.d)
+`);
+
+	auto diff = makeDiff(before, after, DiffSettings("app", 1));
+	auto moduleSet = buildModuleSet(diff);
+
+	auto tmpPath = "test-mermaid.mmd";
+	scope (exit)
+	{
+		if (exists(tmpPath))
+			remove(tmpPath);
+	}
+
+	auto f = File(tmpPath, "w");
+	renderMermaid(f, diff, moduleSet);
+	f.close();
+
+	auto content = readText(tmpPath);
+	assert(content.canFind("graph TD"));
+	assert(content.canFind("classDef added"));
+	assert(content.canFind("app --> std_conv"));
 }
