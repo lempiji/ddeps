@@ -144,6 +144,7 @@ dub build -c diff-update
 | depth | `-d N` or `--depth=N` | search depth | 1 |
 | exclude | `-e XXX [-e YYY]` or `--exclude=XXX [--exclude=YYY]` | exclude module names | `object` |
 | format | `--format=dot|mermaid` | output format | `dot` |
+| group | `-g NAME=mod1,mod2` or `-g mod` | group nodes; short form includes submodules; multiple `-g` allowed |  |
 | help | `--help` | show help |  |
 
 # Mermaid output
@@ -155,3 +156,25 @@ dub run ddeps -- --format=mermaid --output=deps.mmd
 ```
 
 Open `deps.mmd` in a Mermaid-capable viewer/editor to inspect the graph. Added nodes/edges are green, removed are red, kept are neutral. Graphviz is not required for Mermaid output.
+
+## Grouping example
+
+```
+dub run ddeps -- --group util --group UI=app.ui,app.ui.widgets --format=dot -o deps.dot
+```
+
+`--group util` creates a group for `util` and its submodules (e.g., `util.log`). `--group UI=...` groups the exact modules listed. Groups are rendered as clusters in DOT and subgraphs in Mermaid.
+
+Wildcard helper: suffix `.*` inside `--group` targets the module and all submodules even in long form, e.g. `--group external=mir.*,numir` or short form `--group mir.*`.
+
+## Integration / sample outputs script
+
+Run once to clone sample repos and emit DOT/Mermaid (and SVG if `dot` exists):
+
+```
+rdmd ./scripts/sample_outputs.d
+```
+
+Artifacts live under `./tmp/test-<repo>/` and include grouping/exclude variants. For `md`, both with/without `-e core -e std` are generated.
+
+Rx diff example is built in: the script checks out `rx` tag `v0.7.0` as the old reference, compares against current HEAD, and writes grouped color-diff graphs (`deps-diff-full.dot/.mmd/.svg`) showing red/green changes.

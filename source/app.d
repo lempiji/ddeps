@@ -10,6 +10,9 @@ import std.getopt;
 import std.range;
 import std.ascii : isAlphaNum, isDigit;
 import std.array : appender;
+import std.format : format;
+import std.string : indexOf, split;
+import std.range.primitives : isOutputRange;
 
 version (unittest)
 {
@@ -26,18 +29,20 @@ else
 		bool forceUpdate;
 		string[] excludeNames = ["object"]; // default exclude
 		string formatName = "dot";
+		string[] groupArgs;
 
 		// dfmt off
 		auto helpInformation = getopt(args,
-				"i|input", "deps file name", &depsfile,
-				"o|output", "graph file name.\n\tIf not specified, it is standard output.", &outfile,
-				"u|update", "update lock file", &forceUpdate,
-				"l|lock", "lock file name", &lockfile,
-				"f|focus", "filtering target name", &focusName,
-				"d|depth", "depth for dependency search", &filterCost,
-				"e|exclude", "exclude module names", &excludeNames,
-				"format", "output format: dot or mermaid", &formatName
-			);
+			"i|input", "deps file name", &depsfile,
+			"o|output", "graph file name.\n\tIf not specified, it is standard output.", &outfile,
+			"u|update", "update lock file", &forceUpdate,
+			"l|lock", "lock file name", &lockfile,
+			"f|focus", "filtering target name", &focusName,
+			"d|depth", "depth for dependency search", &filterCost,
+			"e|exclude", "exclude module names", &excludeNames,
+			"format", "output format: dot or mermaid", &formatName,
+			"g|group", "group modules: --group util (includes submodules) or --group UI=app.ui,app.ui.widgets", &groupArgs
+		);
 		// dfmt on
 
 		if (helpInformation.helpWanted)
@@ -60,6 +65,12 @@ else
 				filterCost, excludeNames));
 
 		auto moduleSet = buildModuleSet(diff);
+		GroupSpec[] groupSpecs;
+		foreach (arg; groupArgs)
+			groupSpecs ~= parseGroupArg(arg);
+		auto warn = (string msg) { stderr.writefln!"warning: %s"(msg); };
+		auto visibleNodes = moduleSet.byKey.array();
+		auto nodeToGroup = buildGroupAssignments(groupSpecs, visibleNodes, warn);
 		auto f = outfile ? File(outfile, "w") : stdout;
 		scope (exit)
 			f.close();
@@ -67,10 +78,10 @@ else
 		switch (formatName)
 		{
 		case "dot":
-			renderDot(f, diff, moduleSet);
+			renderDot(f, diff, moduleSet, nodeToGroup);
 			break;
 		case "mermaid":
-			renderMermaid(f, diff, moduleSet);
+			renderMermaid(f, diff, moduleSet, nodeToGroup);
 			break;
 		default:
 			stderr.writefln!"Unknown format: %s (use dot or mermaid)"(formatName);
@@ -595,7 +606,128 @@ unittest
 	assert(sanitizeId("alpha") == "alpha");
 }
 
-void renderDot(File f, GraphDiff diff, ModuleEditType[string] moduleSet)
+struct GroupToken
+{
+	string name;
+	bool includeSubmodules;
+}
+
+struct GroupSpec
+{
+	string name;
+	GroupToken[] modules;
+}
+
+GroupToken parseGroupToken(string token, bool defaultIncludeSubs)
+{
+	if (token.endsWith(".*"))
+		return GroupToken(token[0 .. $ - 2], true);
+	return GroupToken(token, defaultIncludeSubs);
+}
+
+GroupSpec parseGroupArg(string arg)
+{
+	auto eqPos = arg.indexOf('=');
+	if (eqPos == -1)
+		return GroupSpec(arg, [GroupToken(arg, true)]);
+
+	auto name = arg[0 .. eqPos];
+	auto mods = arg[eqPos + 1 .. $].split(",");
+	GroupToken[] tokens;
+	foreach (m; mods)
+		tokens ~= parseGroupToken(m, false);
+	return GroupSpec(name, tokens);
+}
+
+string[string] buildGroupAssignments(Warn)(GroupSpec[] specs, string[] visibleNodes, Warn warn)
+	if (isOutputRange!(Warn, string))
+{
+	string[string] nodeToGroup;
+	bool[string] warnedDuplicate;
+
+	bool matches(GroupSpec spec, string node)
+	{
+		foreach (mod; spec.modules)
+		{
+			if (mod.name.length == 0)
+				continue;
+			if (node == mod.name)
+				return true;
+			if (mod.includeSubmodules && node.startsWith(chain(mod.name, ".")))
+				return true;
+		}
+		return false;
+	}
+
+	foreach (spec; specs)
+	{
+		bool matched;
+		foreach (node; visibleNodes)
+		{
+			if (!matches(spec, node))
+				continue;
+
+			if (node in nodeToGroup)
+			{
+				if (!(node in warnedDuplicate))
+				{
+					warnedDuplicate[node] = true;
+					warn.put(format("module '%s' already grouped as '%s'; skipping group '%s'",
+							node, nodeToGroup[node], spec.name));
+				}
+				matched = true;
+				continue;
+			}
+
+			nodeToGroup[node] = spec.name;
+			matched = true;
+		}
+		if (!matched)
+		{
+			warn.put(format("group '%s' matched no visible nodes", spec.name));
+		}
+	}
+
+	return nodeToGroup;
+}
+
+unittest
+{
+	auto s1 = parseGroupArg("ui=app.ui,app.ui.widgets");
+	assert(s1.name == "ui");
+	assert(s1.modules.length == 2);
+	assert(!s1.modules[0].includeSubmodules);
+	assert(s1.modules[0].name == "app.ui");
+
+	auto s2 = parseGroupArg("util");
+	assert(s2.name == "util");
+	assert(s2.modules[0].name == "util");
+	assert(s2.modules[0].includeSubmodules);
+
+	auto s3 = parseGroupArg("ext=mir.*,numir");
+	assert(s3.modules.length == 2);
+	assert(s3.modules[0].name == "mir");
+	assert(s3.modules[0].includeSubmodules);
+	assert(s3.modules[1].name == "numir");
+	assert(!s3.modules[1].includeSubmodules);
+
+	string[] nodes = ["app", "app.ui", "app.ui.widgets", "core", "util.log"];
+	GroupSpec[] specs = [GroupSpec("ui", [GroupToken("app.ui", true)]),
+		GroupSpec("util", [GroupToken("util", true)]),
+		GroupSpec("dup", [GroupToken("app.ui", false)])];
+
+	auto collector = appender!(string[]);
+	auto map = buildGroupAssignments(specs, nodes, collector);
+
+	assert(map["app.ui"] == "ui");
+	assert(map["app.ui.widgets"] == "ui");
+	assert(map["util.log"] == "util");
+	assert(map.length == 3);
+	assert(collector.data.length == 1); // duplicate warning
+}
+
+void renderDot(File f, GraphDiff diff, ModuleEditType[string] moduleSet,
+		string[string] nodeToGroup)
 {
 	f.writeln("digraph {");
 	if (diff.keptNodes.length > 0)
@@ -661,6 +793,25 @@ void renderDot(File f, GraphDiff diff, ModuleEditType[string] moduleSet)
 		foreach (m; diff.addedEdges)
 			f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name, m.import_.name);
 	}
+
+	// group clusters (after nodes/edges to keep styles intact)
+	if (nodeToGroup.length > 0)
+	{
+		string[][string] groups;
+		foreach (node, groupName; nodeToGroup)
+			groups[groupName] ~= node;
+
+		foreach (groupName, members; groups)
+		{
+			members.sort();
+			auto clusterId = "cluster_" ~ sanitizeId(groupName);
+			f.writefln!`    subgraph "%s" {`(clusterId);
+			f.writefln!`        label="%s";`(groupName);
+			foreach (m; members)
+				f.writefln!`        "%s";`(m);
+			f.writeln("    }");
+		}
+	}
 	f.writeln("}");
 }
 
@@ -671,7 +822,8 @@ struct MermaidNode
 	ModuleEditType kind;
 }
 
-void renderMermaid(File f, GraphDiff diff, ModuleEditType[string] moduleSet)
+void renderMermaid(File f, GraphDiff diff, ModuleEditType[string] moduleSet,
+		string[string] nodeToGroup)
 {
 	f.writeln("graph TD");
 	f.writeln("  classDef kept stroke:#24292e,stroke-width:1px,fill:#ffffff;");
@@ -743,6 +895,22 @@ void renderMermaid(File f, GraphDiff diff, ModuleEditType[string] moduleSet)
 		writeEdge(m, "#cb2431");
 	foreach (m; diff.addedEdges)
 		writeEdge(m, "#2cbe4e");
+
+	if (nodeToGroup.length > 0)
+	{
+		string[][string] groups;
+		foreach (node, groupName; nodeToGroup)
+			groups[groupName] ~= node;
+
+		foreach (groupName, members; groups)
+		{
+			members.sort();
+			f.writefln!"  subgraph \"%s\"" (groupName);
+			foreach (m; members)
+				f.writefln!"    %s"(sanitizeId(m));
+			f.writeln("  end");
+		}
+	}
 }
 
 unittest
@@ -768,11 +936,53 @@ app (/app.d) : private : std.conv (/std/conv.d)
 	}
 
 	auto f = File(tmpPath, "w");
-	renderMermaid(f, diff, moduleSet);
+	renderMermaid(f, diff, moduleSet, null);
 	f.close();
 
 	auto content = readText(tmpPath);
 	assert(content.canFind("graph TD"));
 	assert(content.canFind("classDef added"));
 	assert(content.canFind("app --> std_conv"));
+}
+
+unittest
+{
+	auto before = toGraph(`
+app (/app.d) : private : app.ui (/app/ui.d)
+app.ui (/app/ui.d) : private : object (/object.d)
+`);
+	auto after = before;
+
+	auto diff = makeDiff(before, after, DiffSettings("app", 2));
+	auto moduleSet = buildModuleSet(diff);
+
+	GroupSpec[] specs = [parseGroupArg("app")];
+	auto warn = (string msg) { };
+	auto nodeToGroup = buildGroupAssignments(specs, moduleSet.byKey.array(), warn);
+
+	auto dotPath = "test-group.dot";
+	scope (exit)
+	{
+		if (exists(dotPath))
+			remove(dotPath);
+	}
+	auto dotFile = File(dotPath, "w");
+	renderDot(dotFile, diff, moduleSet, nodeToGroup);
+	dotFile.close();
+	auto dotContent = readText(dotPath);
+	assert(dotContent.canFind("subgraph \"cluster_app\""));
+	assert(dotContent.canFind("label=\"app\""));
+
+	auto mmdPath = "test-group.mmd";
+	scope (exit)
+	{
+		if (exists(mmdPath))
+			remove(mmdPath);
+	}
+	auto mmdFile = File(mmdPath, "w");
+	renderMermaid(mmdFile, diff, moduleSet, nodeToGroup);
+	mmdFile.close();
+	auto mmdContent = readText(mmdPath);
+	assert(mmdContent.canFind("subgraph \"app\""));
+	assert(mmdContent.canFind("app_ui"));
 }

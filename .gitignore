@@ -13,3 +13,4 @@ graphviz-test-*
 *.o
 *.obj
 *.lst
+tmp/
