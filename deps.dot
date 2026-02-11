@@ -11,6 +11,13 @@ digraph {
         "std.range"
         "std.stdio"
     }
+    {
+        node [style=filled color="#bef5cb" fillcolor="#e6ffed"];
+        "std.format"
+        "std.range.primitives"
+        "std.string"
+        "std.sumtype"
+    }
     "app" -> "std.algorithm";
     "app" -> "std.array";
     "app" -> "std.ascii";
@@ -20,4 +27,8 @@ digraph {
     "app" -> "std.getopt";
     "app" -> "std.range";
     "app" -> "std.stdio";
+    "app" -> "std.format" [color="#2cbe4e"];
+    "app" -> "std.range.primitives" [color="#2cbe4e"];
+    "app" -> "std.string" [color="#2cbe4e"];
+    "app" -> "std.sumtype" [color="#2cbe4e"];
 }
