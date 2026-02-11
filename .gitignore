@@ -14,3 +14,13 @@ graphviz-test-*
 *.obj
 *.lst
 tmp/
+libddeps.a
+ddeps.pdb
+ddeps.lib
+ddeps-test-unittest.pdb
+ddeps-test-unittest
+ddeps-test-diff.pdb
+ddeps-test-diff
+ddeps
+trace.def
+trace.log

@@ -13,6 +13,7 @@ import std.array : appender;
 import std.format : format;
 import std.string : indexOf, split;
 import std.range.primitives : isOutputRange;
+import std.sumtype : SumType, match;
 
 version (unittest)
 {
@@ -29,6 +30,7 @@ else
 		bool forceUpdate;
 		string[] excludeNames = ["object"]; // default exclude
 		string formatName = "dot";
+		string[] allowRuleArgs;
 		string[] groupArgs;
 
 		// dfmt off
@@ -41,7 +43,8 @@ else
 			"d|depth", "depth for dependency search", &filterCost,
 			"e|exclude", "exclude module names", &excludeNames,
 			"format", "output format: dot or mermaid", &formatName,
-			"g|group", "group modules: --group util (includes submodules) or --group UI=app.ui,app.ui.widgets", &groupArgs
+			"g|group", "group modules: --group util (includes submodules) or --group UI=app.ui,app.ui.widgets", &groupArgs,
+			"allow-rule", "allowed dependency: <src>-><dst> (module or group:name). All other deps from <src> warn.", &allowRuleArgs
 		);
 		// dfmt on
 
@@ -71,6 +74,34 @@ else
 		auto warn = (string msg) { stderr.writefln!"warning: %s"(msg); };
 		auto visibleNodes = moduleSet.byKey.array();
 		auto nodeToGroup = buildGroupAssignments(groupSpecs, visibleNodes, warn);
+		AllowRule[] allowRules;
+		foreach (a; allowRuleArgs)
+		{
+			auto res = parseAllowRule(a);
+			res.match!(
+				(AllowRule r) { allowRules ~= r; },
+				(string err) { stderr.writefln!"warning: ignore allow-rule '%s' (%s)"(a, err); }
+			);
+		}
+		Edge[] violatingEdges;
+		auto collectViolations = (Edge e)
+		{
+			auto scopedRules = rulesForSource(allowRules, nodeToGroup, e.module_.name);
+			if (scopedRules.length == 0)
+				return; // no rule for this source
+			foreach (r; scopedRules)
+			{
+				if (matchesRule(r, nodeToGroup, e))
+					return; // allowed
+			}
+			violatingEdges ~= e;
+		};
+		foreach (e; diff.keptEdges)
+			collectViolations(e);
+		foreach (e; diff.addedEdges)
+			collectViolations(e);
+		foreach (e; violatingEdges)
+			writeln("[warn] violation: ", e.module_.name, " -> ", e.import_.name);
 		auto f = outfile ? File(outfile, "w") : stdout;
 		scope (exit)
 			f.close();
@@ -78,10 +109,10 @@ else
 		switch (formatName)
 		{
 		case "dot":
-			renderDot(f, diff, moduleSet, nodeToGroup);
+			renderDot(f, diff, moduleSet, nodeToGroup, violatingEdges);
 			break;
 		case "mermaid":
-			renderMermaid(f, diff, moduleSet, nodeToGroup);
+			renderMermaid(f, diff, moduleSet, nodeToGroup, violatingEdges);
 			break;
 		default:
 			stderr.writefln!"Unknown format: %s (use dot or mermaid)"(formatName);
@@ -618,6 +649,39 @@ struct GroupSpec
 	GroupToken[] modules;
 }
 
+enum EntityKind { Module, Group }
+
+struct RuleEndpoint
+{
+	EntityKind kind;
+	string name;
+}
+
+struct AllowRule
+{
+	RuleEndpoint src;
+	RuleEndpoint dst;
+}
+
+alias AllowRuleResult = SumType!(AllowRule, string);
+
+RuleEndpoint parseRuleEndpoint(string token)
+{
+	if (token.startsWith("group:"))
+		return RuleEndpoint(EntityKind.Group, token["group:".length .. $]);
+	return RuleEndpoint(EntityKind.Module, token);
+}
+
+AllowRuleResult parseAllowRule(string arg) // treat result as must-use by convention
+{
+	auto arrowPos = arg.indexOf("->");
+	if (arrowPos <= 0 || arrowPos + 2 >= arg.length)
+		return AllowRuleResult("invalid allow rule (use X->Y; quote if shell redirects): " ~ arg);
+	auto lhs = arg[0 .. arrowPos];
+	auto rhs = arg[arrowPos + 2 .. $];
+	return AllowRuleResult(AllowRule(parseRuleEndpoint(lhs), parseRuleEndpoint(rhs)));
+}
+
 GroupToken parseGroupToken(string token, bool defaultIncludeSubs)
 {
 	if (token.endsWith(".*"))
@@ -691,6 +755,37 @@ string[string] buildGroupAssignments(Warn)(GroupSpec[] specs, string[] visibleNo
 	return nodeToGroup;
 }
 
+bool matchesEndpoint(RuleEndpoint ep, string node, string[string] nodeToGroup)
+{
+	final switch (ep.kind)
+	{
+	case EntityKind.Module:
+		return node == ep.name;
+	case EntityKind.Group:
+		if (!(node in nodeToGroup))
+			return false;
+		return nodeToGroup[node] == ep.name;
+	}
+	assert(0);
+}
+
+bool matchesRule(AllowRule rule, string[string] nodeToGroup, Edge e)
+{
+	return matchesEndpoint(rule.src, e.module_.name, nodeToGroup)
+		&& matchesEndpoint(rule.dst, e.import_.name, nodeToGroup);
+}
+
+AllowRule[] rulesForSource(AllowRule[] rules, string[string] nodeToGroup, string src)
+{
+	AllowRule[] result;
+	foreach (r; rules)
+	{
+		if (matchesEndpoint(r.src, src, nodeToGroup))
+			result ~= r;
+	}
+	return result;
+}
+
 unittest
 {
 	auto s1 = parseGroupArg("ui=app.ui,app.ui.widgets");
@@ -727,8 +822,12 @@ unittest
 }
 
 void renderDot(File f, GraphDiff diff, ModuleEditType[string] moduleSet,
-		string[string] nodeToGroup)
+		string[string] nodeToGroup, Edge[] violatingEdges = null)
 {
+	bool[string] isViolating;
+	foreach (v; violatingEdges)
+		isViolating[format("%s->%s", v.module_.name, v.import_.name)] = true;
+
 	f.writeln("digraph {");
 	if (diff.keptNodes.length > 0)
 	{
@@ -764,18 +863,31 @@ void renderDot(File f, GraphDiff diff, ModuleEditType[string] moduleSet,
 	{
 		foreach (m; diff.keptEdges)
 		{
+			auto key = format("%s->%s", m.module_.name, m.import_.name);
+			auto violate = key in isViolating;
 			switch (moduleSet[m.import_.name]) with (ModuleEditType)
 			{
 			case Keep:
-				f.writefln!`    "%s" -> "%s";`(m.module_.name, m.import_.name);
+				if (violate)
+					f.writefln!`    "%s" -> "%s" [style="bold,dashed",color="#cb2431"];`(m.module_.name, m.import_.name);
+				else
+					f.writefln!`    "%s" -> "%s";`(m.module_.name, m.import_.name);
 				break;
 			case Remove:
-				f.writefln!`    "%s" -> "%s" [color="#cb2431"];`(m.module_.name,
-						m.import_.name);
+				if (violate)
+					f.writefln!`    "%s" -> "%s" [color="#cb2431",style="bold,dashed"];`(m.module_.name,
+							m.import_.name);
+				else
+					f.writefln!`    "%s" -> "%s" [color="#cb2431"];`(m.module_.name,
+							m.import_.name);
 				break;
 			case Add:
-				f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name,
-						m.import_.name);
+				if (violate)
+					f.writefln!`    "%s" -> "%s" [color="#2cbe4e",style="bold,dashed"];`(m.module_.name,
+							m.import_.name);
+				else
+					f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name,
+							m.import_.name);
 				break;
 			default:
 				writeln("// unknown edge: ", m);
@@ -786,12 +898,24 @@ void renderDot(File f, GraphDiff diff, ModuleEditType[string] moduleSet,
 	if (diff.removedEdges.length > 0)
 	{
 		foreach (m; diff.removedEdges)
-			f.writefln!`    "%s" -> "%s" [color="#cb2431"];`(m.module_.name, m.import_.name);
+		{
+			auto key = format("%s->%s", m.module_.name, m.import_.name);
+			if (key in isViolating)
+				f.writefln!`    "%s" -> "%s" [color="#cb2431",style="bold,dashed"];`(m.module_.name, m.import_.name);
+			else
+				f.writefln!`    "%s" -> "%s" [color="#cb2431"];`(m.module_.name, m.import_.name);
+		}
 	}
 	if (diff.addedEdges.length > 0)
 	{
 		foreach (m; diff.addedEdges)
-			f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name, m.import_.name);
+		{
+			auto key = format("%s->%s", m.module_.name, m.import_.name);
+			if (key in isViolating)
+				f.writefln!`    "%s" -> "%s" [color="#2cbe4e",style="bold,dashed"];`(m.module_.name, m.import_.name);
+			else
+				f.writefln!`    "%s" -> "%s" [color="#2cbe4e"];`(m.module_.name, m.import_.name);
+		}
 	}
 
 	// group clusters (after nodes/edges to keep styles intact)
@@ -823,8 +947,12 @@ struct MermaidNode
 }
 
 void renderMermaid(File f, GraphDiff diff, ModuleEditType[string] moduleSet,
-		string[string] nodeToGroup)
+		string[string] nodeToGroup, Edge[] violatingEdges = null)
 {
+	bool[string] isViolating;
+	foreach (v; violatingEdges)
+		isViolating[format("%s->%s", v.module_.name, v.import_.name)] = true;
+
 	f.writeln("graph TD");
 	f.writeln("  classDef kept stroke:#24292e,stroke-width:1px,fill:#ffffff;");
 	f.writeln("  classDef added stroke:#2cbe4e,stroke-width:2px,fill:#e6ffed;");
@@ -872,6 +1000,12 @@ void renderMermaid(File f, GraphDiff diff, ModuleEditType[string] moduleSet,
 		if (color.length)
 		{
 			f.writefln!"  linkStyle %s stroke:%s,stroke-width:2px;"(edgeIndex, color);
+		}
+		else
+		{
+			auto key = format("%s->%s", e.module_.name, e.import_.name);
+			if (key in isViolating)
+				f.writefln!"  linkStyle %s stroke:#cb2431,stroke-width:3px,stroke-dasharray:5,3;"(edgeIndex);
 		}
 		edgeIndex++;
 	}
@@ -967,7 +1101,7 @@ app.ui (/app/ui.d) : private : object (/object.d)
 			remove(dotPath);
 	}
 	auto dotFile = File(dotPath, "w");
-	renderDot(dotFile, diff, moduleSet, nodeToGroup);
+	renderDot(dotFile, diff, moduleSet, nodeToGroup, null);
 	dotFile.close();
 	auto dotContent = readText(dotPath);
 	assert(dotContent.canFind("subgraph \"cluster_app\""));
@@ -980,9 +1114,58 @@ app.ui (/app/ui.d) : private : object (/object.d)
 			remove(mmdPath);
 	}
 	auto mmdFile = File(mmdPath, "w");
-	renderMermaid(mmdFile, diff, moduleSet, nodeToGroup);
+	renderMermaid(mmdFile, diff, moduleSet, nodeToGroup, null);
 	mmdFile.close();
 	auto mmdContent = readText(mmdPath);
 	assert(mmdContent.canFind("subgraph \"app\""));
 	assert(mmdContent.canFind("app_ui"));
+}
+
+unittest
+{
+	bool ok = true;
+	auto ruleAB = parseAllowRule("A->B").match!(
+		(AllowRule r) => r,
+		(string err) => AllowRule(RuleEndpoint(EntityKind.Module, ""), RuleEndpoint(EntityKind.Module, ""))
+	);
+	string[string] groups;
+	auto edgeAB = Edge("module", Node("A"), Node("B"));
+	auto edgeAC = Edge("module", Node("A"), Node("C"));
+	auto edgeXA = Edge("module", Node("X"), Node("B"));
+
+	auto ruleAC = parseAllowRule("A->C").match!(
+		(AllowRule r) => r,
+		(string err) => AllowRule(RuleEndpoint(EntityKind.Module, ""), RuleEndpoint(EntityKind.Module, ""))
+	);
+	AllowRule[] rules = [ruleAB, ruleAC];
+	assert(matchesRule(ruleAB, groups, edgeAB));
+	assert(!matchesRule(ruleAB, groups, edgeAC));
+
+	// scoped allow: A->B,C allowed; A->D should warn
+	assert(rulesForSource(rules, groups, "A").length == 2);
+	assert(rulesForSource(rules, groups, "X").length == 0);
+
+	bool isViolation(Edge e)
+	{
+		auto scoped = rulesForSource(rules, groups, e.module_.name);
+		if (scoped.length == 0)
+			return false;
+		foreach (r; scoped)
+			if (matchesRule(r, groups, e))
+				return false;
+		return true;
+	}
+
+	assert(!isViolation(edgeAB));
+	assert(!isViolation(edgeAC));
+	assert(!isViolation(edgeXA)); // no rules for X
+	auto edgeAD = Edge("module", Node("A"), Node("D"));
+	assert(isViolation(edgeAD));
+
+	auto bad = parseAllowRule("group:ahpd.infrastructure-");
+	bool badHandled = bad.match!(
+		(AllowRule r) { return false; },
+		(string err) { return true; }
+	);
+	assert(badHandled); // should be rejected gracefully
 }

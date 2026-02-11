@@ -144,6 +144,7 @@ dub build -c diff-update
 | depth | `-d N` or `--depth=N` | search depth | 1 |
 | exclude | `-e XXX [-e YYY]` or `--exclude=XXX [--exclude=YYY]` | exclude module names | `object` |
 | format | `--format=dot|mermaid` | output format | `dot` |
+| allow-rule | `--allow-rule=A->B` where A/B are module names or `group:name` | allow-list per source; other targets from that source warn |  |
 | group | `-g NAME=mod1,mod2` or `-g mod` | group nodes; short form includes submodules; multiple `-g` allowed |  |
 | help | `--help` | show help |  |
 
@@ -178,3 +179,7 @@ rdmd ./scripts/sample_outputs.d
 Artifacts live under `./tmp/test-<repo>/` and include grouping/exclude variants. For `md`, both with/without `-e core -e std` are generated.
 
 Rx diff example is built in: the script checks out `rx` tag `v0.7.0` as the old reference, compares against current HEAD, and writes grouped color-diff graphs (`deps-diff-full.dot/.mmd/.svg`) showing red/green changes.
+
+### Dependency direction warnings
+
+Use `--allow-rule` to allow specific downward directions between layers (e.g., `--allow-rule=group:ui->group:app`, `--allow-rule=group:app->group:infra`). For any source that has allow-rules, edges to non-allowed targets are warned: rendered bold/dashed (kept edges also red) with a warning message on stdout. Sources without rules are ignored. This helps enforce layered architectures where modules only depend in approved directions.
